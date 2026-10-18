@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { ReceiptText, ScanLine, ShieldCheck, FolderOpen, CalendarRange, ArrowRight, Lock, Fingerprint, Download } from 'lucide-react';
 import AuthForm from '@/components/AuthForm';
 import { useAuth } from '@/lib/auth';
