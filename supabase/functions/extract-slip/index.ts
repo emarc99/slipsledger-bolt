@@ -103,7 +103,11 @@ async function callGemma(bytes: Uint8Array, mime: string, apiKey: string): Promi
               ],
             },
           ],
-          generationConfig: { temperature: 0.2 },
+          generationConfig: {
+            temperature: 0.2,
+            responseMimeType: "application/json",
+            maxOutputTokens: 1024,
+          },
         }),
       },
     );
@@ -177,15 +181,28 @@ Deno.serve(async (req: Request) => {
     const text = await callGemma(bytes, mime, apiKey);
 
     const cleaned = text
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```$/, "")
+      .replace(/```(?:json)?/gi, "")
+      .replace(/\uFEFF/g, "")
       .trim();
     const match = cleaned.match(/\{[\s\S]*\}/);
-    let parsed: Extracted;
+    const candidate = match ? match[0] : cleaned;
+    let parsed: Extracted | null = null;
     try {
-      parsed = JSON.parse(match ? match[0] : cleaned);
+      parsed = JSON.parse(candidate);
     } catch {
-      console.error("gemma output not JSON", cleaned.slice(0, 200));
+      // Gemma sometimes emits trailing commas or single quotes — sanitize and retry.
+      try {
+        const sanitized = candidate
+          .replace(/,\s*([}\]])/g, "$1")
+          .replace(/[{,]\s*'([^']+)'/g, (m, k: string) => m.includes(",") ? m.replace(`'${k}'`, `"${k}"`) : m)
+          .replace(/'([^']*)'(?=\s*:)/g, '"$1"');
+        parsed = JSON.parse(sanitized);
+      } catch {
+        parsed = null;
+      }
+    }
+    if (!parsed) {
+      console.error("gemma output not JSON", cleaned.slice(0, 300));
       return json({ error: "The AI reader returned an unreadable result" }, 502);
     }
     if (parsed.error === "not_a_slip") return json({ error: "That image does not look like a payment slip" }, 422);
