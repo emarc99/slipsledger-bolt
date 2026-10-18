@@ -21,7 +21,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-const GEMINI_MODEL = "gemini-2.0-flash-lite";
+const GEMINI_MODELS = ["gemini-2.0-flash", "gemini-2.0-flash-lite"];
 
 const PROMPT = `You read payment receipts/slips for a permanent record service. Extract exactly this JSON (no markdown, no extra keys):
 {"title": string, "payer_name": string, "merchant": string, "amount": number, "paid_on": "YYYY-MM-DD", "category": "rent"|"utilities"|"groceries"|"services"|"goods"|"transport"|"medical"|"education"|"other", "payment_type": "rent"|"cleaning"|"guard"|"other", "covers_from": "YYYY-MM-DD"|null, "covers_to": "YYYY-MM-DD"|null, "note": string}
@@ -97,33 +97,40 @@ Deno.serve(async (req: Request) => {
     const apiKey = Deno.env.get("GEMINI_API_KEY");
     if (!apiKey) return json({ error: "AI reader is not configured yet — fill the details manually" }, 503);
 
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                { text: PROMPT },
-                { inline_data: { mime_type: contentType, data: btoaFromArray(bytes) } },
-              ],
-            },
-          ],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 512 },
-        }),
-      },
-    );
-    if (!geminiRes.ok) {
-      console.error("gemini request failed", geminiRes.status);
-      return json({ error: "The AI reader could not process this slip" }, 502);
+    let text: string | undefined;
+    for (const model of GEMINI_MODELS) {
+      const geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  { text: PROMPT },
+                  { inline_data: { mime_type: contentType, data: btoaFromArray(bytes) } },
+                ],
+              },
+            ],
+            generationConfig: { temperature: 0.1, maxOutputTokens: 512 },
+          }),
+        },
+      );
+      if (geminiRes.ok) {
+        const geminiBody = await geminiRes.json();
+        const candidate = geminiBody?.candidates?.[0];
+        text = candidate?.content?.parts
+          ?.map((p: { text?: string }) => p.text ?? "")
+          .join("");
+        if (text) break;
+        console.error("gemini returned empty candidate", model, candidate?.finishReason);
+        continue;
+      }
+      const errText = await geminiRes.text().catch(() => "");
+      console.error(`gemini request failed (${model})`, geminiRes.status, errText.slice(0, 500));
     }
-    const geminiBody = await geminiRes.json();
-    const text: string | undefined = geminiBody?.candidates?.[0]?.content?.parts
-      ?.map((p: { text?: string }) => p.text ?? "")
-      .join("");
-    if (!text) return json({ error: "The AI reader returned no result" }, 502);
+    if (!text) return json({ error: "The AI reader could not process this slip" }, 502);
 
     const cleaned = text.replace(/```json|```/g, "").trim();
     let parsed: Extracted;
