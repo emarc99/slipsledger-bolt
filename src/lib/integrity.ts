@@ -2,7 +2,7 @@
 // Recorded on the payment so the photo's integrity can later be re-verified:
 // hash the file again and compare — a mismatch means the stored image changed.
 
-export async function hashFile(file: File): Promise<string> {
+export async function hashFile(file: File | Blob): Promise<string> {
   const buf = await file.arrayBuffer();
   const digest = await crypto.subtle.digest('SHA-256', buf);
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');

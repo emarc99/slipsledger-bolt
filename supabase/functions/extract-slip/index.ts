@@ -2,15 +2,20 @@
 # Extract-slip edge function
 
 Receives { imagePath } (path inside the private `slips` bucket), verifies the
-caller's JWT, downloads the image server-side, sends it to Google Gemini for
-structured extraction, validates the output shape, and returns a JSON draft:
-{ payer_name, amount, paid_on, payment_type, covers_from, covers_to, note }.
+caller's JWT, downloads the image server-side, sends it to Gemma 4 via the
+Gemini API for structured extraction, validates the output shape, and returns
+a JSON draft: { title, payer_name, merchant, amount, paid_on, category,
+payment_type, covers_from, covers_to, note }.
 
 Security:
 - The GEMINI_API_KEY secret never reaches the browser.
 - The caller must be authenticated; the image path's first folder must equal
   their user id, so nobody can point this at another user's slip.
 - Generic error messages only; details go to the function log.
+
+Model handling mirrors the proven week2-mlh-hacktoberfest Gemma client:
+gemma-4-26b-a4b-it, image first / prompt second, no system instruction,
+downscaled JPEG payloads, and retry with backoff on transient API errors.
 */
 
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
@@ -21,20 +26,28 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
-const GEMINI_MODELS = ["gemini-2.0-flash", "gemini-2.0-flash-lite"];
+const GEMMA_MODEL = "gemma-4-26b-a4b-it";
+const RETRY_ATTEMPTS = 4;
+const RETRY_BASE_MS = 1500;
 
-const PROMPT = `You read payment receipts/slips for a permanent record service. Extract exactly this JSON (no markdown, no extra keys):
+const PROMPT = `You are SlipsLedger's slip analyst for a permanent record service.
+Given a photo of a handwritten or printed payment slip or receipt, classify the
+payment and extract structured fields. Be precise with amounts and dates.
+
+Respond with ONLY valid JSON matching the schema. No markdown fences. No extra keys.
+
 {"title": string, "payer_name": string, "merchant": string, "amount": number, "paid_on": "YYYY-MM-DD", "category": "rent"|"utilities"|"groceries"|"services"|"goods"|"transport"|"medical"|"education"|"other", "payment_type": "rent"|"cleaning"|"guard"|"other", "covers_from": "YYYY-MM-DD"|null, "covers_to": "YYYY-MM-DD"|null, "note": string}
+
 Rules:
 - title: short description of what was paid for (e.g. "Deposit — Flat B", "Diesel top-up").
 - payer_name: person/business that paid (empty if you paid someone).
 - merchant: business/person paid to (empty if someone paid you).
-- amount: total amount (number only).
-- paid_on: transaction date.
-- category: classify: rent/lease → rent; electricity/water/internet → utilities; food shopping → groceries; labor/cleaning/repair → services; physical products → goods; fuel/taxi/fare → transport; pharmacy/clinic → medical; school/fees → education; else other.
-- payment_type: only relevant when category is rent: rent/lease → rent; cleaning → cleaning; guard/security → guard; else other.
+- amount: total amount (number only). If unreadable, use 0.
+- paid_on: transaction date. If unreadable, use "".
+- category: rent/lease → rent; electricity/water/waste/internet → utilities; food shopping → groceries; labor/cleaning/repair → services; physical products → goods; fuel/taxi/fare → transport; pharmacy/clinic → medical; school/fees → education; else other.
+- payment_type: only relevant when category is rent: rent/lease → rent; cleaning/sanitation → cleaning; guard/security → guard; else other.
 - covers_from/covers_to: only if the receipt states a period covered (e.g. "rent for March to June"); otherwise null.
-- note: one short line with anything notable (reference number, method, risk flag like mismatched names).
+- note: one short line with anything notable (reference number, method, risk flag like mismatched names or overwritten figures).
 If the image is not a receipt or payment confirmation, return {"error":"not_a_slip"}.`;
 
 interface Extracted {
@@ -56,6 +69,69 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+async function downscaleImage(bytes: Uint8Array, mime: string): Promise<{ bytes: Uint8Array; mime: string }> {
+  // Photos are already normalized to ≤1600px JPEG client-side before upload;
+  // this is a pass-through safety net for anything uploaded by other means.
+  return { bytes, mime: mime || "image/jpeg" };
+}
+
+function isRetryable(status: number, body: string): boolean {
+  return (
+    [429, 500, 503, 504].includes(status) ||
+    /resource_exhausted|internal|unavailable|deadline|temporar/i.test(body)
+  );
+}
+
+async function callGemma(bytes: Uint8Array, mime: string, apiKey: string): Promise<string> {
+  let lastStatus = 0;
+  let lastBody = "";
+  for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt++) {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMMA_MODEL}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [
+                { inline_data: { mime_type: mime, data: btoaFromArray(bytes) } },
+                { text: PROMPT },
+              ],
+            },
+          ],
+          generationConfig: { temperature: 0.2 },
+        }),
+      },
+    );
+    if (res.ok) {
+      const body = await res.json();
+      const text = body?.candidates?.[0]?.content?.parts
+        ?.map((p: { text?: string }) => p.text ?? "")
+        .join("")
+        .trim();
+      if (text) return text;
+      lastStatus = 200;
+      lastBody = JSON.stringify(body).slice(0, 500);
+    } else {
+      lastStatus = res.status;
+      lastBody = await res.text().catch(() => "");
+      console.error(`gemma attempt ${attempt} failed`, lastStatus, lastBody.slice(0, 500));
+    }
+    if (attempt < RETRY_ATTEMPTS && isRetryable(lastStatus, lastBody)) {
+      await sleep(RETRY_BASE_MS * attempt);
+      continue;
+    }
+    break;
+  }
+  throw new Error(`Gemma API failed (${lastStatus}): ${lastBody.slice(0, 300)}`);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 Deno.serve(async (req: Request) => {
@@ -91,53 +167,25 @@ Deno.serve(async (req: Request) => {
       console.error("slip download failed", dlErr);
       return json({ error: "Could not read that image" }, 404);
     }
-    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const original = new Uint8Array(await blob.arrayBuffer());
     const contentType = blob.type || "image/jpeg";
 
     const apiKey = Deno.env.get("GEMINI_API_KEY");
     if (!apiKey) return json({ error: "AI reader is not configured yet — fill the details manually" }, 503);
 
-    let text: string | undefined;
-    for (const model of GEMINI_MODELS) {
-      const geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  { text: PROMPT },
-                  { inline_data: { mime_type: contentType, data: btoaFromArray(bytes) } },
-                ],
-              },
-            ],
-            generationConfig: { temperature: 0.1, maxOutputTokens: 512 },
-          }),
-        },
-      );
-      if (geminiRes.ok) {
-        const geminiBody = await geminiRes.json();
-        const candidate = geminiBody?.candidates?.[0];
-        text = candidate?.content?.parts
-          ?.map((p: { text?: string }) => p.text ?? "")
-          .join("");
-        if (text) break;
-        console.error("gemini returned empty candidate", model, candidate?.finishReason);
-        continue;
-      }
-      const errText = await geminiRes.text().catch(() => "");
-      console.error(`gemini request failed (${model})`, geminiRes.status, errText.slice(0, 500));
-    }
-    if (!text) return json({ error: "The AI reader could not process this slip" }, 502);
+    const { bytes, mime } = await downscaleImage(original, contentType);
+    const text = await callGemma(bytes, mime, apiKey);
 
-    const cleaned = text.replace(/```json|```/g, "").trim();
+    const cleaned = text
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/, "")
+      .trim();
+    const match = cleaned.match(/\{[\s\S]*\}/);
     let parsed: Extracted;
     try {
-      parsed = JSON.parse(cleaned);
+      parsed = JSON.parse(match ? match[0] : cleaned);
     } catch {
-      console.error("gemini output not JSON", cleaned.slice(0, 200));
+      console.error("gemma output not JSON", cleaned.slice(0, 200));
       return json({ error: "The AI reader returned an unreadable result" }, 502);
     }
     if (parsed.error === "not_a_slip") return json({ error: "That image does not look like a payment slip" }, 422);
@@ -165,7 +213,14 @@ Deno.serve(async (req: Request) => {
     return json(result);
   } catch (err) {
     console.error("extract-slip failed", err);
-    return json({ error: "Something went wrong reading this slip. Please try again." }, 500);
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("(429)")) {
+      return json({ error: "The AI reader is busy right now — wait a moment and try again" }, 502);
+    }
+    if (msg.includes("(500)") || msg.includes("(503)")) {
+      return json({ error: "The AI reader is temporarily unavailable — try again in a few seconds" }, 502);
+    }
+    return json({ error: "Could not auto-read the slip — fill the details in below" }, 502);
   }
 });
 

@@ -6,7 +6,6 @@ import { supabase } from '@/lib/supabase';
 import { formatMoney } from '@/lib/months';
 import { PAYMENT_TYPE_LABELS, DOC_CATEGORY_LABELS, type PaymentType, type DocCategory } from '@/lib/types';
 import { hashFile } from '@/lib/integrity';
-import { Modal } from '@/components/PeopleView';
 
 
 interface Draft {
@@ -27,6 +26,32 @@ interface Draft {
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+// Downscale large photos before upload (browser canvas), mirroring the
+// proven Streamlit client: ≤1600px on the long edge, JPEG re-encode.
+async function prepareForUpload(file: File): Promise<Blob> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+    if (scale >= 1 && file.type === 'image/jpeg') return file;
+    const w = Math.round(bitmap.width * scale);
+    const h = Math.round(bitmap.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close();
+    return await new Promise<Blob>((resolve) => canvas.toBlob(
+      (b) => resolve(b ?? file),
+      'image/jpeg',
+      0.88,
+    ));
+  } catch {
+    return file;
+  }
 }
 
 export default function UploadView() {
@@ -65,8 +90,9 @@ export default function UploadView() {
     setErr(null);
     try {
       const path = `${user.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
-      const docHash = await hashFile(file);
-      const { error: upErr } = await supabase.storage.from('slips').upload(path, file, { contentType: file.type });
+      const prepared = await prepareForUpload(file);
+      const docHash = await hashFile(prepared);
+      const { error: upErr } = await supabase.storage.from('slips').upload(path, prepared, { contentType: 'image/jpeg' });
       if (upErr) throw new Error('upload');
 
       let extraction: Partial<Draft> | null = null;
