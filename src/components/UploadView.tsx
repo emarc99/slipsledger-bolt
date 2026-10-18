@@ -1,12 +1,12 @@
 import { useRef, useState } from 'react';
-import { Upload as UploadIcon, FileCheck2, Loader2 } from 'lucide-react';
+import { Upload as UploadIcon, FileCheck2, Loader2, CheckCircle2, X, Sparkles } from 'lucide-react';
 import { useLedgerContext } from '@/hooks/useLedgerContext';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { formatMoney } from '@/lib/months';
 import { PAYMENT_TYPE_LABELS, DOC_CATEGORY_LABELS, type PaymentType, type DocCategory } from '@/lib/types';
 import { hashFile } from '@/lib/integrity';
-
+import ConfettiBurst from '@/components/ConfettiBurst';
 
 interface Draft {
   payerName: string;
@@ -28,8 +28,6 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-// Downscale large photos before upload (browser canvas), mirroring the
-// proven Streamlit client: ≤1600px on the long edge, JPEG re-encode.
 async function prepareForUpload(file: File): Promise<Blob> {
   try {
     const bitmap = await createImageBitmap(file);
@@ -65,6 +63,8 @@ export default function UploadView() {
   const [status, setStatus] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [filedTrigger, setFiledTrigger] = useState(0);
+  const [dragOver, setDragOver] = useState(false);
   const cur = profile?.currency ?? 'NGN';
 
   const pickFile = (f: File | null) => {
@@ -207,6 +207,7 @@ export default function UploadView() {
       if (caseErr) console.error('case attach failed', caseErr);
     }
     await refresh();
+    setFiledTrigger(Date.now());
     setDraft(null);
     setFile(null);
     setPreviewUrl(null);
@@ -215,26 +216,31 @@ export default function UploadView() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <div>
+      <div className="animate-fade-up">
         <h1 className="text-2xl font-bold text-surface-900">Add a receipt</h1>
         <p className="text-sm text-surface-500">Any receipt or payment confirmation — rent, a shop purchase, a service. SlipsLedger reads it and keeps it as a permanent record.</p>
       </div>
 
-      {!draft && (
+      {!draft && !status && (
         <div
-          className="card flex flex-col items-center gap-4 border-2 border-dashed border-surface-200 p-10 text-center transition hover:border-brand-300"
-          onDragOver={(e) => e.preventDefault()}
+          className={`card flex flex-col items-center gap-4 border-2 border-dashed p-10 text-center transition-all duration-300 animate-fade-up ${
+            dragOver ? 'border-brand-500 bg-brand-50/50 scale-[1.01]' : 'border-surface-200 hover:border-brand-300'
+          }`}
+          style={{ animationDelay: '60ms' }}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
           onDrop={(e) => {
             e.preventDefault();
+            setDragOver(false);
             pickFile(e.dataTransfer.files[0] ?? null);
           }}
         >
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-50">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-50 animate-float-y">
             <UploadIcon className="h-6 w-6 text-brand-600" />
           </div>
           <div>
             <p className="font-medium text-surface-900">Choose a slip photo</p>
-            <p className="mt-1 text-sm text-surface-500">JPG or PNG, up to 10 MB</p>
+            <p className="mt-1 text-sm text-surface-500">JPG or PNG, up to 10 MB · or drag and drop</p>
           </div>
           <input
             ref={fileRef}
@@ -243,31 +249,40 @@ export default function UploadView() {
             className="hidden"
             onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
           />
-          <button className="btn-primary" onClick={() => fileRef.current?.click()}>Select image</button>
+          <button className="btn-primary press" onClick={() => fileRef.current?.click()}>Select image</button>
         </div>
       )}
 
       {previewUrl && !draft && (
-        <div className="card overflow-hidden">
-          <img src={previewUrl} alt="Slip preview" className="max-h-96 w-full object-contain" />
+        <div className="card overflow-hidden animate-pop">
+          <div className="relative">
+            <img src={previewUrl} alt="Slip preview" className="max-h-96 w-full object-contain" />
+            {extracting && (
+              <div className="absolute inset-0 flex items-center justify-center bg-surface-900/40">
+                <div className="flex flex-col items-center gap-3 text-white">
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                  <span className="text-sm font-medium">Reading slip…</span>
+                </div>
+              </div>
+            )}
+          </div>
           <div className="border-t border-surface-200 p-4">
-            <button className="btn-primary w-full" onClick={extract} disabled={extracting}>
-              {extracting ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Reading slip…
-                </>
-              ) : (
-                <>
-                  <FileCheck2 className="h-4 w-4" /> Read and review
-                </>
-              )}
+            <button
+              className="group relative w-full overflow-hidden rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition-all duration-300 hover:bg-brand-400 hover:shadow-glow-accent disabled:opacity-50"
+              onClick={extract}
+              disabled={extracting}
+            >
+              <span className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
+              <span className="relative flex items-center justify-center gap-2">
+                <FileCheck2 className="h-4 w-4" /> Read and review
+              </span>
             </button>
           </div>
         </div>
       )}
 
       {draft && (
-        <form className="card space-y-4 p-6" onSubmit={fileDraft}>
+        <form className="card space-y-4 p-6 animate-pop" onSubmit={fileDraft}>
           <h2 className="text-lg font-semibold text-surface-900">Review and file</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
@@ -352,19 +367,24 @@ export default function UploadView() {
               This payment will fill every month from {draft.coversFrom} to {draft.coversTo} in the rent timeline.
             </p>
           )}
-          {err && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
+          {err && <p className="rounded-lg bg-error-50 px-3 py-2 text-sm text-error-700">{err}</p>}
           <div className="flex justify-end gap-2">
-            <button type="button" className="btn-secondary" onClick={() => { setDraft(null); setStatus(null); }}>Discard</button>
-            <button type="submit" className="btn-primary" disabled={busy}>{busy ? 'Filing…' : `File ${formatMoney(Number(draft.amount) || 0, cur)}`}</button>
+            <button type="button" className="btn-secondary press" onClick={() => { setDraft(null); setStatus(null); }}>Discard</button>
+            <button type="submit" className="btn-primary press" disabled={busy}>{busy ? 'Filing…' : `File ${formatMoney(Number(draft.amount) || 0, cur)}`}</button>
           </div>
         </form>
       )}
 
       {status && (
-        <p className="rounded-lg bg-brand-50 px-4 py-3 text-sm text-brand-800" role="status">{status}</p>
+        <div className="relative overflow-hidden rounded-lg bg-success-50 px-4 py-3 animate-pop">
+          <ConfettiBurst trigger={filedTrigger} />
+          <p className="relative flex items-center gap-2 text-sm font-medium text-success-800" role="status">
+            <CheckCircle2 className="h-4 w-4 animate-badge-in text-success-600" /> {status}
+          </p>
+        </div>
       )}
-      {err && !draft && (
-        <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{err}</p>
+      {err && !draft && !status && (
+        <p className="rounded-lg bg-error-50 px-4 py-3 text-sm text-error-700 animate-fade-up" role="alert">{err}</p>
       )}
     </div>
   );

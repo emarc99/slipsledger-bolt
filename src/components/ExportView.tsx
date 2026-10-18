@@ -1,11 +1,10 @@
-import { useState } from 'react';
-import { Download, Link2, Copy, XCircle, Share2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Download, Link2, Copy, XCircle, Share2, Check } from 'lucide-react';
 import { useLedgerContext } from '@/hooks/useLedgerContext';
 import { supabase } from '@/lib/supabase';
 import { formatMoney } from '@/lib/months';
 import { PAYMENT_TYPE_LABELS } from '@/lib/types';
 import { Loading, ErrorBox } from '@/components/Dashboard';
-import { Modal } from '@/components/PeopleView';
 
 interface ShareLinkRow {
   id: string;
@@ -20,12 +19,16 @@ export default function ExportView() {
   const [links, setLinks] = useState<ShareLinkRow[]>([]);
   const [creating, setCreating] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [downloaded, setDownloaded] = useState(false);
+
+  useEffect(() => {
+    void loadLinks();
+  }, []);
 
   const loadLinks = async () => {
     const { data } = await supabase.from('share_links').select('*').order('created_at', { ascending: false });
     setLinks(data ?? []);
   };
-  void loadLinks;
 
   const downloadCsv = () => {
     const nameById = new Map(people.map((p) => [p.id, p.full_name]));
@@ -50,6 +53,8 @@ export default function ExportView() {
     a.download = `slipsledger-export-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+    setDownloaded(true);
+    setTimeout(() => setDownloaded(false), 2500);
   };
 
   const createLink = async () => {
@@ -95,45 +100,58 @@ export default function ExportView() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <div>
+      <div className="animate-fade-up">
         <h1 className="text-2xl font-bold text-surface-900">Export & share</h1>
         <p className="text-sm text-surface-500">Take your records anywhere, or share a read-only snapshot</p>
       </div>
 
-      <section className="card space-y-4 p-6">
+      <section className="card card-hover space-y-4 p-6 animate-fade-up" style={{ animationDelay: '60ms' }}>
         <h2 className="flex items-center gap-2 text-sm font-semibold text-surface-700">
           <Download className="h-4 w-4 text-brand-600" /> CSV export
         </h2>
         <p className="text-sm text-surface-500">
           {payments.length} payment{payments.length === 1 ? '' : 's'} totalling {formatMoney(total, cur)} — handy for disputes, agents, and tax records.
         </p>
-        <button className="btn-primary" onClick={downloadCsv} disabled={payments.length === 0}>
-          Download CSV
+        <button
+          className="group relative overflow-hidden rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-card transition-all duration-300 hover:bg-brand-700 hover:shadow-lift press disabled:opacity-50"
+          onClick={downloadCsv}
+          disabled={payments.length === 0}
+        >
+          <span className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
+          <span className="relative flex items-center gap-2">
+            {downloaded ? <><Check className="h-4 w-4 text-success-300 animate-badge-in" /> Downloaded!</> : <><Download className="h-4 w-4" /> Download CSV</>}
+          </span>
         </button>
       </section>
 
-      <section className="card space-y-4 p-6">
+      <section className="card card-hover space-y-4 p-6 animate-fade-up" style={{ animationDelay: '120ms' }}>
         <h2 className="flex items-center gap-2 text-sm font-semibold text-surface-700">
           <Share2 className="h-4 w-4 text-brand-600" /> Share links
         </h2>
         <p className="text-sm text-surface-500">
           A read-only ledger page a co-owner, agent, or accountant can open. Links expire after 7 days and can be revoked anytime.
         </p>
-        <button className="btn-secondary" onClick={createLink} disabled={creating}>
+        <button className="btn-secondary press" onClick={createLink} disabled={creating}>
           <Link2 className="h-4 w-4" /> {creating ? 'Creating…' : 'Create share link'}
         </button>
         <ul className="divide-y divide-surface-100">
           {links.filter((l) => !l.revoked).map((l) => (
-            <li key={l.id} className="flex items-center justify-between gap-3 py-3">
+            <li key={l.id} className="flex items-center justify-between gap-3 py-3 transition-colors hover:bg-brand-50/40">
               <div className="min-w-0">
                 <p className="truncate font-mono text-xs text-surface-700">{shareUrl(l.token)}</p>
                 <p className="text-xs text-surface-400">expires {new Date(l.expires_at).toLocaleDateString()}</p>
               </div>
               <div className="flex shrink-0 gap-1">
-                <button className="btn-secondary px-2.5 py-1.5" onClick={() => copy(l.token)} aria-label="Copy link">
-                  {copied === l.token ? <span className="text-xs text-brand-700">Copied</span> : <Copy className="h-4 w-4" />}
+                <button
+                  className="btn-secondary press px-2.5 py-1.5"
+                  onClick={() => copy(l.token)}
+                  aria-label="Copy link"
+                >
+                  {copied === l.token
+                    ? <Check className="h-4 w-4 text-success-600 animate-badge-in" />
+                    : <Copy className="h-4 w-4" />}
                 </button>
-                <button className="btn-secondary px-2.5 py-1.5 text-red-600" onClick={() => revokeLink(l.id)} aria-label="Revoke link">
+                <button className="btn-secondary press px-2.5 py-1.5 text-error-600" onClick={() => revokeLink(l.id)} aria-label="Revoke link">
                   <XCircle className="h-4 w-4" />
                 </button>
               </div>

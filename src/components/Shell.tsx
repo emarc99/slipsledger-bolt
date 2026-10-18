@@ -48,13 +48,14 @@ export default function Shell({ children, tab, onTab }: Props) {
             <button
               key={id}
               onClick={() => onTab(id)}
-              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
+              className={`group relative flex w-full items-center gap-3 overflow-hidden rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
                 tab === id
                   ? 'bg-brand-500/15 text-brand-300'
                   : 'text-surface-300 hover:bg-white/5 hover:text-white'
               }`}
             >
-              <Icon className="h-[18px] w-[18px]" />
+              {tab === id && <span className="absolute left-0 h-5 w-1 rounded-r-full bg-brand-400" />}
+              <Icon className={`h-[18px] w-[18px] transition-transform duration-200 ${tab === id ? 'scale-110' : 'group-hover:scale-110'}`} />
               {label}
             </button>
           ))}
@@ -90,8 +91,8 @@ export default function Shell({ children, tab, onTab }: Props) {
             <button
               key={id}
               onClick={() => onTab(id)}
-              className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-                tab === id ? 'bg-brand-500/15 text-brand-300' : 'text-surface-300'
+              className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition-all duration-200 ${
+                tab === id ? 'bg-brand-500/15 text-brand-300 shadow-[inset_0_-2px_0] shadow-brand-400' : 'text-surface-300'
               }`}
             >
               {label}

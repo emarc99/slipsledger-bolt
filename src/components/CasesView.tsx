@@ -1,17 +1,19 @@
 import { useState } from 'react';
-import { FolderOpen, Plus, FileText, CheckCircle2 } from 'lucide-react';
+import { FolderOpen, Plus, FileText, CheckCircle2, Printer, Paperclip } from 'lucide-react';
 import { useLedgerContext } from '@/hooks/useLedgerContext';
 import { supabase } from '@/lib/supabase';
 import { formatMoney, formatDate } from '@/lib/months';
 import { DOC_CATEGORY_LABELS } from '@/lib/types';
 import { Loading, ErrorBox } from '@/components/Dashboard';
 import { Modal } from '@/components/PeopleView';
+import ConfettiBurst from '@/components/ConfettiBurst';
 
 export default function CasesView() {
   const { cases, caseDocuments, payments, slipUrl, loading, error, refresh, profile } = useLedgerContext();
   const [showAdd, setShowAdd] = useState(false);
   const [openCase, setOpenCase] = useState<string | null>(null);
   const [attachFor, setAttachFor] = useState<string | null>(null);
+  const [resolveTrigger, setResolveTrigger] = useState(0);
   const cur = profile?.currency ?? 'NGN';
 
   const docsByCase = (caseId: string) => {
@@ -41,6 +43,7 @@ export default function CasesView() {
       console.error('case status failed', err);
       return;
     }
+    if (resolved) setResolveTrigger(Date.now());
     await refresh();
   };
 
@@ -82,51 +85,69 @@ export default function CasesView() {
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+        <div className="animate-fade-up">
           <h1 className="text-2xl font-bold text-surface-900">Cases</h1>
           <p className="text-sm text-surface-500">Bundle receipts for disputes, refunds, or expense reports — ready to print as evidence</p>
         </div>
-        <button className="btn-primary" onClick={() => setShowAdd(true)}>
+        <button className="btn-primary press animate-fade-up" onClick={() => setShowAdd(true)}>
           <Plus className="h-4 w-4" /> New case
         </button>
       </div>
 
       {cases.length === 0 ? (
-        <div className="card p-12 text-center text-sm text-surface-500">
-          No cases yet. Create one — e.g. “Deposit dispute — Flat B” — and add receipts to it.
+        <div className="card flex flex-col items-center gap-4 p-12 text-center text-sm text-surface-500 animate-fade-up" style={{ animationDelay: '60ms' }}>
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-50 animate-float-y">
+            <FolderOpen className="h-6 w-6 text-brand-600" />
+          </div>
+          <p>No cases yet. Create one — e.g. "Deposit dispute — Flat B" — and add receipts to it.</p>
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
-          {cases.map((c) => {
+          {cases.map((c, i) => {
             const docs = docsByCase(c.id);
             const total = docs.reduce((s, p) => s + p.amount, 0);
+            const isResolved = c.status === 'resolved';
             return (
-              <div key={c.id} className="card p-5">
+              <div
+                key={c.id}
+                className={`card card-hover group relative p-5 animate-fade-up ${isResolved ? 'border-success-300' : ''}`}
+                style={{ animationDelay: `${i * 60}ms` }}
+              >
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h3 className="flex items-center gap-2 truncate font-semibold text-surface-900">
-                      <FolderOpen className="h-4 w-4 shrink-0 text-brand-600" /> {c.name}
-                    </h3>
-                    {c.description && <p className="mt-0.5 line-clamp-2 text-xs text-surface-500">{c.description}</p>}
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-transform duration-300 group-hover:scale-110 ${isResolved ? 'bg-success-100 text-success-700' : 'bg-brand-100 text-brand-700'}`}>
+                      <FolderOpen className="h-4 w-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="truncate font-semibold text-surface-900">{c.name}</h3>
+                      {c.description && <p className="mt-0.5 line-clamp-2 text-xs text-surface-500">{c.description}</p>}
+                    </div>
                   </div>
-                  <span className={c.status === 'resolved' ? 'badge-paid' : 'badge-partial'}>
-                    {c.status === 'resolved' ? 'Resolved' : 'Open'}
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold animate-badge-in ${isResolved ? 'bg-success-100 text-success-800' : 'bg-warning-100 text-warning-800'}`}>
+                    {isResolved ? <><CheckCircle2 className="h-3 w-3" /> Resolved</> : 'Open'}
                   </span>
                 </div>
-                <p className="mt-3 text-sm text-surface-700">
-                  {docs.length} document{docs.length === 1 ? '' : 's'} · {formatMoney(total, cur)}
+                <p className="mt-3 flex items-center gap-2 text-sm text-surface-700">
+                  <span className="inline-flex items-center gap-1 rounded-md bg-surface-100 px-2 py-0.5 text-xs font-medium">
+                    <FileText className="h-3 w-3" /> {docs.length} doc{docs.length === 1 ? '' : 's'}
+                  </span>
+                  <span className="amount font-semibold text-surface-900">{formatMoney(total, cur)}</span>
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <button className="btn-secondary px-3 py-1.5 text-xs" onClick={() => setOpenCase(c.id)}>
+                  <button className="btn-secondary press px-3 py-1.5 text-xs" onClick={() => setOpenCase(c.id)}>
                     <FileText className="h-3.5 w-3.5" /> Open
                   </button>
-                  <button className="btn-secondary px-3 py-1.5 text-xs" onClick={() => printCase(c.id)} disabled={docs.length === 0}>
-                    Print report
+                  <button className="btn-secondary press px-3 py-1.5 text-xs" onClick={() => printCase(c.id)} disabled={docs.length === 0}>
+                    <Printer className="h-3.5 w-3.5" /> Print report
                   </button>
-                  <button className="btn-secondary px-3 py-1.5 text-xs" onClick={() => markResolved(c.id, c.status !== 'resolved')}>
-                    <CheckCircle2 className="h-3.5 w-3.5" /> {c.status === 'resolved' ? 'Reopen' : 'Resolve'}
+                  <button
+                    className={`press px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all duration-300 ${isResolved ? 'border-surface-200 text-surface-600 hover:bg-surface-50' : 'border-success-300 text-success-700 hover:bg-success-50'}`}
+                    onClick={() => markResolved(c.id, !isResolved)}
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" /> {isResolved ? 'Reopen' : 'Resolve'}
                   </button>
                 </div>
+                {isResolved && <ConfettiBurst trigger={resolveTrigger} />}
               </div>
             );
           })}
@@ -147,22 +168,26 @@ export default function CasesView() {
                       <p className="text-xs text-surface-500">{formatDate(p.paid_on)} · {DOC_CATEGORY_LABELS[p.category]}</p>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                      <span className="font-semibold">{formatMoney(p.amount, cur)}</span>
+                      <span className="amount font-semibold">{formatMoney(p.amount, cur)}</span>
                       {p.slip_image_path && (
-                        <button className="btn-secondary px-2 py-1 text-xs" onClick={async () => {
+                        <button className="btn-secondary press px-2 py-1 text-xs" onClick={async () => {
                           const url = await slipUrl(p.slip_image_path);
                           if (url) window.open(url, '_blank');
                         }}>Photo</button>
                       )}
-                      <button className="text-xs text-red-600" onClick={() => removeDoc(openCase!, p.id)}>Remove</button>
+                      <button className="text-xs text-error-600 transition hover:scale-105" onClick={() => removeDoc(openCase!, p.id)}>Remove</button>
                     </div>
                   </li>
                 ))}
               </ul>
             )}
             <div className="flex justify-between pt-2">
-              <button className="btn-secondary" onClick={() => setAttachFor(openCase)}>Add document from vault</button>
-              <button className="btn-primary" onClick={() => printCase(openCase!)}>Print report</button>
+              <button className="btn-secondary press" onClick={() => setAttachFor(openCase)}>
+                <Paperclip className="h-4 w-4" /> Add document
+              </button>
+              <button className="btn-primary press" onClick={() => printCase(openCase!)}>
+                <Printer className="h-4 w-4" /> Print report
+              </button>
             </div>
           </div>
         </Modal>
@@ -227,10 +252,10 @@ function NewCaseModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
           <label className="label" htmlFor="cdesc">Description (optional)</label>
           <textarea id="cdesc" className="input" rows={3} value={description} onChange={(e) => setDescription(e.target.value)} />
         </div>
-        {err && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
+        {err && <p className="rounded-lg bg-error-50 px-3 py-2 text-sm text-error-700">{err}</p>}
         <div className="flex justify-end gap-2">
           <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
-          <button type="submit" className="btn-primary" disabled={busy}>{busy ? 'Saving…' : 'Create'}</button>
+          <button type="submit" className="btn-primary press" disabled={busy}>{busy ? 'Saving…' : 'Create'}</button>
         </div>
       </form>
     </Modal>
@@ -267,7 +292,7 @@ function AttachModal({ caseId, onClose, onDone }: { caseId: string; onClose: () 
                 <p className="truncate font-medium text-surface-900">{p.title || p.merchant || 'Receipt'}</p>
                 <p className="text-xs text-surface-500">{formatDate(p.paid_on)}</p>
               </div>
-              <button className="btn-secondary shrink-0 px-3 py-1 text-xs" onClick={() => attach(p.id)} disabled={busy === p.id}>
+              <button className="btn-secondary press shrink-0 px-3 py-1 text-xs" onClick={() => attach(p.id)} disabled={busy === p.id}>
                 {busy === p.id ? 'Adding…' : 'Add'}
               </button>
             </li>
