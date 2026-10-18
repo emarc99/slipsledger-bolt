@@ -1,0 +1,5 @@
+[functions.extract-slip]
+verify_jwt = true
+
+[functions.telegram-bot]
+verify_jwt = false

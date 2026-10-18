@@ -1,0 +1,73 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Fraunces:opsz,wght@9..144,600;9..144,700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+  body {
+    @apply bg-surface-50 text-surface-900 font-sans;
+  }
+  h1, h2, h3 {
+    @apply font-display;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-card transition hover:-translate-y-px hover:bg-brand-700 hover:shadow-lift focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:shadow-card;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-surface-200 bg-white px-4 py-2.5 text-sm font-semibold text-surface-800 shadow-card transition hover:-translate-y-px hover:border-brand-300 hover:bg-brand-50/50 hover:text-brand-800 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0;
+  }
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-card transition hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .card {
+    @apply rounded-xl border border-surface-200 bg-white shadow-card;
+  }
+  .input {
+    @apply w-full rounded-lg border border-surface-200 bg-white px-3.5 py-2.5 text-sm text-surface-900 placeholder-surface-400 shadow-sm transition focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30;
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-surface-700;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+  .badge-paid {
+    @apply badge bg-brand-100 text-brand-800;
+  }
+  .badge-partial {
+    @apply badge bg-amber-100 text-amber-800;
+  }
+  .badge-overdue {
+    @apply badge bg-red-100 text-red-700;
+  }
+  .badge-overpaid {
+    @apply badge bg-sky-100 text-sky-800;
+  }
+  .badge-neutral {
+    @apply badge bg-surface-100 text-surface-600;
+  }
+  .amount {
+    @apply font-mono tabular-nums tracking-tight;
+  }
+  .stamp {
+    @apply inline-flex items-center gap-1.5 rounded border-2 border-brand-600 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-700;
+  }
+  .dark-card {
+    @apply rounded-xl border border-white/10 bg-white/5 backdrop-blur;
+  }
+  .grain {
+    position: relative;
+  }
+  .grain::before {
+    content: '';
+    @apply pointer-events-none absolute inset-0 opacity-[0.04];
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+}
