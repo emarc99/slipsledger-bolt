@@ -1,9 +1,12 @@
-import { useMemo, useState } from 'react';
-import { CircleDollarSign, AlertTriangle, CheckCircle2, Search, Upload } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { CircleDollarSign, AlertTriangle, CheckCircle2, Search, Upload, Sparkles, TrendingUp, Flame } from 'lucide-react';
 import { useLedgerContext } from '@/hooks/useLedgerContext';
 import { currentMonthKey, monthLabel, formatMoney, monthShortLabel } from '@/lib/months';
 import type { PersonWithStatus } from '@/lib/types';
 import type { Tab } from '@/components/Shell';
+import { useCountUp } from '@/hooks/useCountUp';
+import ProgressRing from '@/components/ProgressRing';
+import ConfettiBurst from '@/components/ConfettiBurst';
 
 interface Props {
   onNavigate: (tab: Tab) => void;
@@ -17,6 +20,13 @@ export default function Dashboard({ onNavigate }: Props) {
   const cur = profile?.currency ?? 'NGN';
   const stats = summary(month);
   const statuses = personStatuses(month);
+
+  const totalPeople = statuses.length;
+  const settledPeople = stats.paidCount;
+  const collectionRate = totalPeople > 0 ? settledPeople / totalPeople : 0;
+  const expectedTotal = stats.collected + stats.outstanding;
+  const moneyRate = expectedTotal > 0 ? stats.collected / expectedTotal : 0;
+  const fullyPaid = totalPeople > 0 && settledPeople === totalPeople;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -47,14 +57,14 @@ export default function Dashboard({ onNavigate }: Props) {
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+        <div className="animate-fade-up">
           <h1 className="font-display text-2xl font-bold text-surface-900">Dashboard</h1>
           <p className="text-sm text-surface-500">{monthLabel(month)} at a glance</p>
         </div>
         <select
           value={month}
           onChange={(e) => setMonth(e.target.value)}
-          className="input w-full sm:w-44"
+          className="input w-full animate-fade-up sm:w-44"
           aria-label="Select month"
         >
           {availableMonths(payments).map((m) => (
@@ -63,14 +73,39 @@ export default function Dashboard({ onNavigate }: Props) {
         </select>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard icon={CircleDollarSign} tone="brand" label="Collected" value={formatMoney(stats.collected, cur)} />
-        <StatCard icon={AlertTriangle} tone="red" label="Outstanding" value={formatMoney(stats.outstanding, cur)} />
-        <StatCard icon={AlertTriangle} tone="amber" label="Overdue people" value={String(stats.overdueCount)} />
-        <StatCard icon={CheckCircle2} tone="brand" label="Paid up" value={String(stats.paidCount)} />
+      {fullyPaid && totalPeople > 0 && (
+        <div className="relative overflow-hidden rounded-xl border border-success-200 bg-success-50 px-4 py-3 text-sm font-medium text-success-800 animate-fade-up">
+          <ConfettiBurst trigger={month} />
+          <span className="relative flex items-center gap-2">
+            <Sparkles className="h-4 w-4 animate-pulse-soft text-success-600" />
+            Every tenant is settled for {monthLabel(month)} — well done.
+          </span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_auto]">
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <StatCard icon={CircleDollarSign} tone="brand" label="Collected" value={stats.collected} format={(v) => formatMoney(v, cur)} delay={0} />
+          <StatCard icon={AlertTriangle} tone="error" label="Outstanding" value={stats.outstanding} format={(v) => formatMoney(v, cur)} delay={80} />
+          <StatCard icon={Flame} tone="warning" label="Overdue people" value={stats.overdueCount} delay={160} />
+          <StatCard icon={CheckCircle2} tone="success" label="Paid up" value={stats.paidCount} delay={240} />
+        </div>
+
+        <div className="card flex flex-col items-center justify-center gap-3 p-5 animate-fade-up" style={{ animationDelay: '300ms' }}>
+          <ProgressRing
+            value={moneyRate}
+            label="Collected"
+            caption={`${formatMoney(stats.collected, cur)} of ${formatMoney(expectedTotal, cur)}`}
+            format={(v) => `${Math.round(v * 100)}%`}
+          />
+          <div className="mt-2 flex items-center gap-1.5 text-xs text-surface-500">
+            <TrendingUp className="h-3.5 w-3.5 text-brand-600" />
+            {Math.round(collectionRate * 100)}% of tenants settled
+          </div>
+        </div>
       </div>
 
-      <div className="card p-4">
+      <div className="card p-4 animate-fade-up" style={{ animationDelay: '360ms' }}>
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-400" />
           <input
@@ -86,49 +121,61 @@ export default function Dashboard({ onNavigate }: Props) {
         <EmptyState onNavigate={onNavigate} />
       ) : (
         <div className="space-y-6">
-          {grouped.map(([propertyName, people]) => (
-            <section key={propertyName} className="card overflow-hidden">
-              <header className="flex items-center justify-between border-b border-surface-200 bg-surface-50 px-4 py-3">
-                <h2 className="flex items-center gap-2 text-sm font-semibold text-surface-700">
-                  {propertyName}
-                </h2>
-                <span className="text-xs text-surface-400">{people.length} {people.length === 1 ? 'person' : 'people'}</span>
-              </header>
-              <ul className="divide-y divide-surface-100">
-                {people.map((s) => (
-                  <li key={s.id} className="flex flex-col gap-2 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-surface-900">{s.full_name}</p>
-                      <p className="text-xs text-surface-500">
-                        {s.unit?.label ?? 'No unit'}
-                        {s.status !== 'n/a' && s.coveredThrough && ` · covered through ${monthShortLabel(s.coveredThrough)} ${s.coveredThrough.slice(0, 4)}`}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {s.balance < 0 && (
-                        <span className="amount text-sm font-semibold text-red-600">{formatMoney(-s.balance, cur)} owed</span>
-                      )}
-                      {s.balance > 0 && (
-                        <span className="amount text-sm font-semibold text-sky-600">{formatMoney(s.balance, cur)} credit</span>
-                      )}
-                      <StatusBadge status={s.status} />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
+          {grouped.map(([propertyName, people], gi) => {
+            const groupSettled = people.every((p) => p.status === 'paid' || p.status === 'overpaid');
+            return (
+              <section
+                key={propertyName}
+                className="card overflow-hidden animate-fade-up"
+                style={{ animationDelay: `${gi * 60}ms` }}
+              >
+                <header className="flex items-center justify-between border-b border-surface-200 bg-surface-50 px-4 py-3">
+                  <h2 className="flex items-center gap-2 text-sm font-semibold text-surface-700">
+                    {propertyName}
+                    {groupSettled && (
+                      <span className="badge-paid animate-badge-in">
+                        <CheckCircle2 className="h-3 w-3" /> All settled
+                      </span>
+                    )}
+                  </h2>
+                  <span className="text-xs text-surface-400">{people.length} {people.length === 1 ? 'person' : 'people'}</span>
+                </header>
+                <ul className="divide-y divide-surface-100">
+                  {people.map((s) => (
+                    <li key={s.id} className="flex flex-col gap-2 px-4 py-3.5 transition-colors hover:bg-brand-50/40 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-surface-900">{s.full_name}</p>
+                        <p className="text-xs text-surface-500">
+                          {s.unit?.label ?? 'No unit'}
+                          {s.status !== 'n/a' && s.coveredThrough && ` · covered through ${monthShortLabel(s.coveredThrough)} ${s.coveredThrough.slice(0, 4)}`}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {s.balance < 0 && (
+                          <span className="amount text-sm font-semibold text-error-600 animate-count-bounce">{formatMoney(-s.balance, cur)} owed</span>
+                        )}
+                        {s.balance > 0 && (
+                          <span className="amount text-sm font-semibold text-info-600 animate-count-bounce">{formatMoney(s.balance, cur)} credit</span>
+                        )}
+                        <StatusBadge status={s.status} />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
         </div>
       )}
 
       {recent.length > 0 && (
-        <section className="card overflow-hidden">
+        <section className="card overflow-hidden animate-fade-up" style={{ animationDelay: '420ms' }}>
           <header className="border-b border-surface-200 bg-surface-50 px-4 py-3">
             <h2 className="text-sm font-semibold text-surface-700">Recent payments</h2>
           </header>
           <ul className="divide-y divide-surface-100">
             {recent.map((p) => (
-              <li key={p.id} className="flex items-center justify-between px-4 py-3 text-sm">
+              <li key={p.id} className="flex items-center justify-between px-4 py-3 text-sm transition-colors hover:bg-brand-50/40">
                 <div>
                   <p className="font-medium text-surface-900">{p.note || 'Payment'}</p>
                   <p className="text-xs text-surface-500">{p.paid_on} · {p.payment_type}</p>
@@ -149,35 +196,59 @@ function availableMonths(payments: { paid_on: string }[]): string[] {
   return [...set].sort().reverse();
 }
 
-function StatCard({ icon: Icon, label, value, tone }: { icon: typeof CircleDollarSign; label: string; value: string; tone: 'brand' | 'red' | 'amber' }) {
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  tone,
+  format,
+  delay,
+}: {
+  icon: typeof CircleDollarSign;
+  label: string;
+  value: number;
+  tone: 'brand' | 'error' | 'warning' | 'success';
+  format?: (v: number) => string;
+  delay: number;
+}) {
+  const animated = useCountUp(value, 900);
   const tones = {
-    brand: 'bg-brand-50 text-brand-700',
-    red: 'bg-red-50 text-red-600',
-    amber: 'bg-amber-50 text-amber-600',
-  };
+    brand: { bg: 'bg-brand-50 text-brand-700', ring: 'group-hover:shadow-glow' },
+    error: { bg: 'bg-error-50 text-error-600', ring: 'group-hover:shadow-glow-error' },
+    warning: { bg: 'bg-warning-50 text-warning-600', ring: 'group-hover:shadow-glow' },
+    success: { bg: 'bg-success-50 text-success-600', ring: 'group-hover:shadow-glow-success' },
+  } as const;
+  const display = format ? format(animated) : String(Math.round(animated));
   return (
-    <div className="card flex items-center gap-4 p-4">
-      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${tones[tone]}`}>
+    <div
+      className={`card card-hover group flex items-center gap-4 p-4 animate-fade-up`}
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-transform duration-200 group-hover:scale-110 ${tones[tone].bg}`}>
         <Icon className="h-5 w-5" />
       </div>
       <div className="min-w-0">
         <p className="text-xs font-medium uppercase tracking-wide text-surface-400">{label}</p>
-        <p className="truncate text-lg font-bold text-surface-900 amount">{value}</p>
+        <p className="truncate text-lg font-bold text-surface-900 amount">{display}</p>
       </div>
     </div>
   );
 }
 
 export function StatusBadge({ status }: { status: PersonWithStatus['status'] }) {
-  const labels: Record<PersonWithStatus['status'], { text: string; cls: string }> = {
-    paid: { text: 'Paid up', cls: 'badge-paid' },
-    partial: { text: 'Partial', cls: 'badge-partial' },
-    overdue: { text: 'Overdue', cls: 'badge-overdue' },
-    overpaid: { text: 'Overpaid', cls: 'badge-overpaid' },
-    'n/a': { text: 'No lease', cls: 'badge-neutral' },
+  const labels: Record<PersonWithStatus['status'], { text: string; cls: string; icon: typeof CheckCircle2 }> = {
+    paid: { text: 'Paid up', cls: 'badge-paid', icon: CheckCircle2 },
+    partial: { text: 'Partial', cls: 'badge-partial', icon: AlertTriangle },
+    overdue: { text: 'Overdue', cls: 'badge-overdue', icon: AlertTriangle },
+    overpaid: { text: 'Overpaid', cls: 'badge-overpaid', icon: TrendingUp },
+    'n/a': { text: 'No lease', cls: 'badge-neutral', icon: CircleDollarSign },
   };
-  const { text, cls } = labels[status];
-  return <span className={cls}>{text}</span>;
+  const { text, cls, icon: Icon } = labels[status];
+  return (
+    <span className={`${cls} animate-badge-in`}>
+      <Icon className="h-3 w-3" /> {text}
+    </span>
+  );
 }
 
 export function Loading() {
@@ -190,7 +261,7 @@ export function Loading() {
 
 export function ErrorBox({ message }: { message: string }) {
   return (
-    <div className="mx-auto max-w-md rounded-xl bg-red-50 p-6 text-center text-sm text-red-700">
+    <div className="mx-auto max-w-md rounded-xl bg-error-50 p-6 text-center text-sm text-error-700">
       {message}
     </div>
   );
@@ -198,8 +269,8 @@ export function ErrorBox({ message }: { message: string }) {
 
 function EmptyState({ onNavigate }: { onNavigate: (t: Tab) => void }) {
   return (
-    <div className="card flex flex-col items-center gap-4 p-12 text-center">
-      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-50">
+    <div className="card flex flex-col items-center gap-4 p-12 text-center animate-fade-up" style={{ animationDelay: '480ms' }}>
+      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-50 animate-float-y">
         <Upload className="h-6 w-6 text-brand-600" />
       </div>
       <div>
@@ -208,7 +279,7 @@ function EmptyState({ onNavigate }: { onNavigate: (t: Tab) => void }) {
           Add people and properties, or photograph a receipt and SlipsLedger will set things up for you.
         </p>
       </div>
-      <button className="btn-primary" onClick={() => onNavigate('upload')}>
+      <button className="btn-primary press" onClick={() => onNavigate('upload')}>
         Add your first receipt
       </button>
     </div>
