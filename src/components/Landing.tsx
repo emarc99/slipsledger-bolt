@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react';
-import { ReceiptText, ScanLine, ShieldCheck, FolderOpen, CalendarRange, ArrowRight, Check, Lock } from 'lucide-react';
+import { ReceiptText, ScanLine, ShieldCheck, FolderOpen, CalendarRange, ArrowRight, Lock, Fingerprint, Download } from 'lucide-react';
 import AuthForm from '@/components/AuthForm';
 import { useAuth } from '@/lib/auth';
 
@@ -93,22 +92,48 @@ export default function Landing() {
       </section>
 
       <section className="border-t border-white/10 bg-surface-900/60">
-        <div className="mx-auto max-w-3xl px-4 py-16 sm:px-8">
-          <h2 className="font-display text-xl font-bold text-white">Privacy, in plain words</h2>
-          <ul className="mt-5 space-y-3 text-sm leading-relaxed text-surface-300">
-            {[
-              'Your documents, cases, and records are visible only to your account — enforced by the database, not just the app.',
-              'Receipt images are read by our AI service only to extract the details, over an encrypted connection.',
-              'Each document carries a cryptographic fingerprint (SHA-256) recorded at filing, so its integrity can be proven later.',
-              'Nothing is ever sold or shared. Share links show only what you choose, expire, and can be revoked.',
-              'You can export everything, or delete your account and all data permanently, any time.',
-            ].map((line) => (
-              <li key={line} className="flex gap-3">
-                <Check className="mt-0.5 h-4 w-4 shrink-0 text-brand-400" />
-                {line}
-              </li>
-            ))}
-          </ul>
+        <div className="mx-auto max-w-6xl px-4 py-20 sm:px-8">
+          <h2 className="text-center font-display text-3xl font-bold text-white">Privacy, in plain words</h2>
+          <p className="mx-auto mt-3 max-w-xl text-center text-sm text-surface-400">
+            The fine print you shouldn't need a lawyer for. Here's exactly what happens to your data.
+          </p>
+          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            <Privacy
+              icon={Lock}
+              title="Private by default"
+              body="Your documents, cases, and records are visible only to your account — enforced by the database, not just the app."
+            />
+            <Privacy
+              icon={ScanLine}
+              title="AI reads, nothing else"
+              body="Receipt images are read by our AI service only to extract the details, over an encrypted connection."
+            />
+            <Privacy
+              icon={Fingerprint}
+              title="Provable integrity"
+              body="Each document carries a cryptographic fingerprint (SHA-256) recorded at filing, so its integrity can be proven later."
+            />
+            <Privacy
+              icon={ShieldCheck}
+              title="Never sold, never shared"
+              body="Nothing is ever sold or shared. Share links show only what you choose, expire, and can be revoked."
+            />
+            <Privacy
+              icon={Download}
+              title="Your data, always yours"
+              body="You can export everything, or delete your account and all data permanently, any time."
+            />
+            <div className="dark-card grain flex flex-col justify-between p-6 transition-all duration-300 hover:-translate-y-1 hover:border-brand-400/30 hover:shadow-glow">
+              <div>
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-500/15">
+                  <ArrowRight className="h-5 w-5 text-brand-300" />
+                </div>
+                <h3 className="mt-4 font-semibold text-white">Ready to see for yourself?</h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-surface-400">Every promise on this page is live in the product, not a policy page.</p>
+              </div>
+              <button className="btn-secondary mt-5 self-start" onClick={() => setShowAuth('signup')}>Create free account</button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -220,6 +245,18 @@ function Step({ n, title, body }: { n: string; title: string; body: string }) {
       <span className="amount text-sm text-brand-400">{n}</span>
       <h3 className="mt-2 font-display text-xl font-semibold text-white">{title}</h3>
       <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-surface-400">{body}</p>
+    </div>
+  );
+}
+
+function Privacy({ icon: Icon, title, body }: { icon: typeof ScanLine; title: string; body: string }) {
+  return (
+    <div className="dark-card grain p-6 transition-all duration-300 hover:-translate-y-1 hover:border-brand-400/30 hover:shadow-glow">
+      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-500/15">
+        <Icon className="h-5 w-5 text-brand-300" />
+      </div>
+      <h3 className="mt-4 font-semibold text-white">{title}</h3>
+      <p className="mt-1.5 text-sm leading-relaxed text-surface-400">{body}</p>
     </div>
   );
 }
